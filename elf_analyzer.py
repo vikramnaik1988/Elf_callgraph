@@ -290,67 +290,185 @@ class ELFAnalyzer:
         
         return dead_functions
     
-    def print_call_graph(self):
-        """Print the call graph"""
-        print("\n=== CALL GRAPH ===")
-        for caller, callees in sorted(self.call_graph.items()):
-            print(f"{caller}:")
-            for callee in sorted(callees):
-                print(f"  -> {callee}")
-        
-        print(f"\nTotal functions with calls: {len(self.call_graph)}")
+    def _write_output(self, content: str, output_file):
+        """Write content to output file or stdout"""
+        if output_file:
+            output_file.write(content)
+        else:
+            print(content, end='')
     
-    def print_dead_code_analysis(self):
+    def print_call_graph(self, output_file=None):
+        """Print the call graph"""
+        self._write_output("\n=== CALL GRAPH ===\n", output_file)
+        for caller, callees in sorted(self.call_graph.items()):
+            self._write_output(f"{caller}:\n", output_file)
+            for callee in sorted(callees):
+                self._write_output(f"  -> {callee}\n", output_file)
+        
+        self._write_output(f"\nTotal functions with calls: {len(self.call_graph)}\n", output_file)
+    
+    def print_dead_code_analysis(self, output_file=None):
         """Print dead code analysis results"""
         dead_funcs = self.find_dead_functions()
         
-        print("\n=== DEAD CODE ANALYSIS ===")
-        print(f"Total functions: {len(self.functions)}")
-        print(f"Dead functions: {len(dead_funcs)}")
+        self._write_output("\n=== DEAD CODE ANALYSIS ===\n", output_file)
+        self._write_output(f"Total functions: {len(self.functions)}\n", output_file)
+        self._write_output(f"Dead functions: {len(dead_funcs)}\n", output_file)
         
         if dead_funcs:
-            print("\nDead functions:")
+            self._write_output("\nDead functions:\n", output_file)
             for func in sorted(dead_funcs):
                 func_info = self.functions[func]
-                print(f"  {func} (addr: 0x{func_info['address']:x}, size: {func_info['size']})")
+                self._write_output(f"  {func} (addr: 0x{func_info['address']:x}, size: {func_info['size']})\n", output_file)
         else:
-            print("No dead functions found!")
+            self._write_output("No dead functions found!\n", output_file)
     
-    def print_statistics(self):
+    def print_statistics(self, output_file=None):
         """Print overall statistics"""
-        print(f"\n=== STATISTICS ===")
-        print(f"File: {self.filename}")
-        print(f"Architecture: {'64-bit' if self.is_64bit else '32-bit'}")
-        print(f"Total symbols: {len(self.symbols)}")
-        print(f"Total functions: {len(self.functions)}")
-        print(f"Functions with outgoing calls: {len(self.call_graph)}")
-        print(f"Functions with incoming calls: {len(self.reverse_call_graph)}")
+        self._write_output("\n=== STATISTICS ===\n", output_file)
+        self._write_output(f"File: {self.filename}\n", output_file)
+        self._write_output(f"Architecture: {'64-bit' if self.is_64bit else '32-bit'}\n", output_file)
+        self._write_output(f"Total symbols: {len(self.symbols)}\n", output_file)
+        self._write_output(f"Total functions: {len(self.functions)}\n", output_file)
+        self._write_output(f"Functions with outgoing calls: {len(self.call_graph)}\n", output_file)
+        self._write_output(f"Functions with incoming calls: {len(self.reverse_call_graph)}\n", output_file)
         
         # Calculate some metrics
         if self.functions:
             max_calls_out = max(len(callees) for callees in self.call_graph.values()) if self.call_graph else 0
             max_calls_in = max(len(callers) for callers in self.reverse_call_graph.values()) if self.reverse_call_graph else 0
             
-            print(f"Max outgoing calls from a function: {max_calls_out}")
-            print(f"Max incoming calls to a function: {max_calls_in}")
+            self._write_output(f"Max outgoing calls from a function: {max_calls_out}\n", output_file)
+            self._write_output(f"Max incoming calls to a function: {max_calls_in}\n", output_file)
+    
+    def export_call_graph_dot(self, filename: str):
+        """Export call graph in DOT format for visualization with Graphviz"""
+        with open(filename, 'w') as f:
+            f.write("digraph CallGraph {\n")
+            f.write("  rankdir=LR;\n")
+            f.write("  node [shape=box];\n\n")
+            
+            # Add all function nodes
+            for func in self.functions:
+                f.write(f'  "{func}";\n')
+            
+            f.write("\n")
+            
+            # Add edges
+            for caller, callees in self.call_graph.items():
+                for callee in callees:
+                    f.write(f'  "{caller}" -> "{callee}";\n')
+            
+            f.write("}\n")
+    
+    def export_dead_code_report(self, filename: str):
+        """Export detailed dead code report"""
+        dead_funcs = self.find_dead_functions()
+        
+        with open(filename, 'w') as f:
+            f.write("DEAD CODE ANALYSIS REPORT\n")
+            f.write("=" * 50 + "\n\n")
+            f.write(f"File: {self.filename}\n")
+            f.write(f"Analysis Date: {__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            
+            f.write("SUMMARY:\n")
+            f.write("-" * 20 + "\n")
+            f.write(f"Total functions: {len(self.functions)}\n")
+            f.write(f"Live functions: {len(self.functions) - len(dead_funcs)}\n")
+            f.write(f"Dead functions: {len(dead_funcs)}\n")
+            if self.functions:
+                dead_percentage = (len(dead_funcs) / len(self.functions)) * 100
+                f.write(f"Dead code percentage: {dead_percentage:.2f}%\n")
+            
+            f.write("\nDEAD FUNCTIONS:\n")
+            f.write("-" * 20 + "\n")
+            
+            if dead_funcs:
+                total_dead_size = 0
+                for func in sorted(dead_funcs):
+                    func_info = self.functions[func]
+                    f.write(f"Function: {func}\n")
+                    f.write(f"  Address: 0x{func_info['address']:x}\n")
+                    f.write(f"  Size: {func_info['size']} bytes\n")
+                    f.write(f"  Section: {func_info['section']}\n\n")
+                    total_dead_size += func_info['size']
+                
+                f.write(f"Total dead code size: {total_dead_size} bytes\n")
+            else:
+                f.write("No dead functions found.\n")
+    
+    def export_full_report(self, filename: str):
+        """Export comprehensive analysis report"""
+        with open(filename, 'w') as f:
+            self.print_statistics(f)
+            self.print_call_graph(f)
+            self.print_dead_code_analysis(f)
+            
+            # Additional detailed information
+            f.write("\n=== FUNCTION DETAILS ===\n")
+            for func_name in sorted(self.functions.keys()):
+                func_info = self.functions[func_name]
+                f.write(f"\n{func_name}:\n")
+                f.write(f"  Address: 0x{func_info['address']:x}\n")
+                f.write(f"  Size: {func_info['size']} bytes\n")
+                f.write(f"  Section: {func_info['section']}\n")
+                
+                # Outgoing calls
+                if func_name in self.call_graph:
+                    f.write(f"  Calls: {', '.join(sorted(self.call_graph[func_name]))}\n")
+                else:
+                    f.write("  Calls: none\n")
+                
+                # Incoming calls
+                if func_name in self.reverse_call_graph:
+                    f.write(f"  Called by: {', '.join(sorted(self.reverse_call_graph[func_name]))}\n")
+                else:
+                    f.write("  Called by: none\n")
 
 
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: python elf_analyzer.py <elf_file>")
-        sys.exit(1)
+    import argparse
     
-    filename = sys.argv[1]
+    parser = argparse.ArgumentParser(description='ELF Call Graph and Dead Code Analyzer')
+    parser.add_argument('elf_file', help='Path to ELF file to analyze')
+    parser.add_argument('-o', '--output', help='Output file for full report')
+    parser.add_argument('--call-graph-dot', help='Export call graph in DOT format')
+    parser.add_argument('--dead-code-report', help='Export detailed dead code report')
+    parser.add_argument('--console', action='store_true', help='Also print to console (default if no output specified)')
+    
+    args = parser.parse_args()
     
     try:
-        analyzer = ELFAnalyzer(filename)
+        analyzer = ELFAnalyzer(args.elf_file)
         
-        analyzer.print_statistics()
-        analyzer.print_call_graph()
-        analyzer.print_dead_code_analysis()
+        # If no output files specified, print to console
+        if not any([args.output, args.call_graph_dot, args.dead_code_report]):
+            args.console = True
         
+        # Console output
+        if args.console:
+            analyzer.print_statistics()
+            analyzer.print_call_graph()
+            analyzer.print_dead_code_analysis()
+        
+        # Full report output
+        if args.output:
+            analyzer.export_full_report(args.output)
+            print(f"Full report exported to: {args.output}")
+        
+        # Call graph DOT export
+        if args.call_graph_dot:
+            analyzer.export_call_graph_dot(args.call_graph_dot)
+            print(f"Call graph (DOT format) exported to: {args.call_graph_dot}")
+            print("Visualize with: dot -Tpng -o callgraph.png " + args.call_graph_dot)
+        
+        # Dead code report
+        if args.dead_code_report:
+            analyzer.export_dead_code_report(args.dead_code_report)
+            print(f"Dead code report exported to: {args.dead_code_report}")
+            
     except Exception as e:
-        print(f"Error analyzing {filename}: {e}")
+        print(f"Error analyzing {args.elf_file}: {e}")
         sys.exit(1)
 
 
